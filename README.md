@@ -41,7 +41,7 @@ go build -o downloader
 After building the project, you can start downloading files using the following command format:
 
 ```bash
-./downloader -url "<file_url>" -n <number_of_chunks>
+./downloader -url "<file_url>" -n <number_of_chunks> -chunk-size <bytes_per_batch > -retires <number_of_retires>
 ```
 
 - `<file_url>`: The URL of the file you wish to download.
@@ -52,7 +52,7 @@ After building the project, you can start downloading files using the following 
 
 ### Example
 
-To download a file using 10 concurrent connections:
+To download a file using 10 concurrent connections with a chunk size of 8723352:
 
 ```bash
 ./downloader -url "https://example.com/path/to/file.parquet" -n 10 -chunk-size 8723352 -retires 5
