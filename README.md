@@ -46,11 +46,14 @@ After building the project, you can start downloading files using the following 
 
 - `<file_url>`: The URL of the file you wish to download.
 - `<number_of_chunks>`: The number of parts to split the file into for concurrent downloading. 
+- `<chunk-size>`: Chunk size for downloading (in bytes). If 0, it will be calculated automatically.
+- `<retries>`: Maximum number of retries for failed downloads.
+
 
 ### Example
 
 To download a file using 10 concurrent connections:
 
 ```bash
-./downloader -url "https://example.com/path/to/file.parquet" -n 10
+./downloader -url "https://example.com/path/to/file.parquet" -n 10 -chunk-size 8723352 -retires 5
 ```

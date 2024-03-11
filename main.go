@@ -69,45 +69,75 @@ func createEmptyFile(path string, size int64) error {
 	return nil
 }
 
-func downloadFileInBit(url, destFilePath string, start, end int64) error {
-	client := &http.Client{}
-
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return err
-	}
-	rangeHeader := fmt.Sprintf("bytes=%d-%d", start, end)
-	req.Header.Add("Range", rangeHeader)
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusPartialContent {
-		return fmt.Errorf("server does not support range requests, got status code: %d", resp.StatusCode)
+func downloadFileInBit(url, destFilePath string, start, end int64, maxRetries int) error {
+	client := &http.Client{
+		Timeout: 30 * time.Second,
 	}
 
-	out, err := os.OpenFile(destFilePath, os.O_WRONLY, 0644)
-	if err != nil {
-		return err
-	}
-	defer out.Close()
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		req, err := http.NewRequest("GET", url, nil)
+		if err != nil {
+			return err
+		}
 
-	_, err = out.Seek(start, io.SeekStart)
-	if err != nil {
-		return err
+		rangeHeader := fmt.Sprintf("bytes=%d-%d", start, end)
+		req.Header.Add("Range", rangeHeader)
+
+		resp, err := client.Do(req)
+		if err != nil {
+			if attempt == maxRetries {
+				return err
+			}
+			fmt.Printf("Download attempt %d failed: %v\n", attempt+1, err)
+			continue
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusPartialContent {
+			err = fmt.Errorf("server does not support range requests, got status code: %d", resp.StatusCode)
+			if attempt == maxRetries {
+				return err
+			}
+			fmt.Printf("Download attempt %d failed: %v\n", attempt+1, err)
+			continue
+		}
+
+		out, err := os.OpenFile(destFilePath, os.O_WRONLY, 0644)
+		if err != nil {
+			return err
+		}
+		defer out.Close()
+
+		_, err = out.Seek(start, io.SeekStart)
+		if err != nil {
+			return err
+		}
+
+		_, err = io.Copy(out, resp.Body)
+		if err != nil {
+			if attempt == maxRetries {
+				return err
+			}
+			fmt.Printf("Download attempt %d failed: %v\n", attempt+1, err)
+			continue
+		}
+
+		return nil
 	}
 
-	_, err = io.Copy(out, resp.Body)
-	return err
+	return fmt.Errorf("maximum number of retries (%d) exceeded", maxRetries)
 }
 
 func main() {
 	var rawURL string
 	var count int
+	var chunkSize int64
+	var maxRetries int
+
 	flag.StringVar(&rawURL, "url", "", "URL of the file to download.")
-	flag.IntVar(&count, "n", 3, "Number of goroutines to use for downloading.")
+	flag.IntVar(&count, "n", 4, "Number of goroutines to use for downloading.")
+	flag.Int64Var(&chunkSize, "chunk-size", 0, "Chunk size for downloading (in bytes). If 0, it will be calculated automatically.")
+	flag.IntVar(&maxRetries, "retries", 3, "Maximum number of retries for failed downloads")
 	flag.Parse()
 
 	if rawURL == "" {
@@ -122,15 +152,13 @@ func main() {
 		return
 	}
 	fileName := path.Base(parsedURL.Path)
-
-	url := ""
 	size, err := getFileSize(rawURL)
 	path := fileName
 	if err != nil {
 		fmt.Println("Error getting file size:", err)
 		return
 	}
-	fmt.Printf("The size of this url - %s is %d\n", url, size)
+	fmt.Printf("The size of this url - %s is %d\n", rawURL, size)
 	etag, err := getFileETag(rawURL)
 	if err != nil {
 		fmt.Println("Error getting Etage:", err)
@@ -144,7 +172,9 @@ func main() {
 	start := time.Now()
 
 	var wg sync.WaitGroup
-	chunkSize := size / int64(count)
+	if chunkSize == 0 {
+		chunkSize = size / int64(count)
+	}
 	for i := 0; i < count; i++ {
 		start := int64(i) * chunkSize
 		end := start + chunkSize - 1
@@ -154,7 +184,7 @@ func main() {
 		wg.Add(1)
 		go func(start, end int64) {
 			defer wg.Done()
-			err := downloadFileInBit(rawURL, path, start, end)
+			err := downloadFileInBit(rawURL, path, start, end, maxRetries)
 			if err != nil {
 				fmt.Printf("Error downloading chunk %d-%d: %v\n", start, end, err)
 			}
