@@ -52,7 +52,7 @@ After building the project, you can start downloading files using the following 
 
 ### Example
 
-To download a file using 10 concurrent connections with a chunk size of 8723352:
+To download a file using 10 concurrent connections with a chunk size of 8723352 and 5 retries if any error occurs:
 
 ```bash
 ./downloader -url "https://example.com/path/to/file.parquet" -n 10 -chunk-size 8723352 -retires 5
